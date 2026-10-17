@@ -66,6 +66,11 @@ class Render {
 	private Graphics graphics;
 	private Bitmap mBitmapBuffer;
 	private int width, height;
+	/**
+	 * Supersampling factor of the target graphics, 1 means the logical and
+	 * the bitmap coordinates are the same.
+	 */
+	private int scale = 1;
 	private final Rect gClip = new Rect();
 	private final Rect clip = new Rect();
 	private final boolean skipSprites = Boolean.getBoolean("micro3d.v3.skipSprites");
@@ -164,6 +169,16 @@ class Render {
 		egl.eglMakeCurrent(eglDisplay, eglWindowSurface, eglWindowSurface, eglContext);
 		Rect clip = this.clip;
 		canvas.getClipBounds(clip);
+		/*
+		 * The graphics may draw to a supersampled buffer while OpenGL works
+		 * with the bitmap pixels, so the clip is converted to the bitmap space.
+		 */
+		int scale = graphics.getPixelScale();
+		if (scale > 1) {
+			clip.set(clip.left * scale, clip.top * scale,
+					clip.right * scale, clip.bottom * scale);
+		}
+		this.scale = scale;
 		int l = clip.left;
 		int t = clip.top;
 		int r = clip.right;
@@ -394,6 +409,19 @@ class Render {
 
 	private float[] getProjectionMatrix(FigureLayout layout, int x, int y) {
 		float[] pm = new float[16];
+		if (scale > 1) {
+			/*
+			 * The target buffer is supersampled, so the logical screen coordinates
+			 * are converted to the bitmap ones. The aspect ratio is not affected.
+			 */
+			layout = new FigureLayout(layout);
+			layout.centerX *= scale;
+			layout.centerY *= scale;
+			layout.perspectiveWidth *= scale;
+			layout.perspectiveHeight *= scale;
+			x *= scale;
+			y *= scale;
+		}
 		switch (layout.settingIndex) {
 			case COMMAND_PARALLEL_SCALE:
 				Utils.parallelScale(pm, x, y, layout, width, height);

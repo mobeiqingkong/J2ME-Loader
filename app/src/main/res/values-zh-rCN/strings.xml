@@ -121,6 +121,8 @@
     <string name="reset">重置</string>
     <string name="pref_input_devices_title">输入设备</string>
     <string name="pref_graphics_mode_title">图形模式:</string>
+    <string name="PREF_SUPERSAMPLING">超采样倍数</string>
+    <string name="pref_supersampling_auto">自动 (按屏幕分辨率)</string>
     <string name="PREF_FONT_ANTI_ALIASING">抗锯齿</string>
     <string name="pref_screen_gravity">屏幕对齐</string>
     <string name="pref_screen_gravity_bottom">底部</string>

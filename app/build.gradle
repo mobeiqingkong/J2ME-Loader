@@ -10,7 +10,8 @@ android {
     namespace 'ru.playsoftware.j2meloader'
 
     defaultConfig {
-        applicationId "ru.playsoftware.j2meloader"
+        // '_mob' suffix keeps this fork installable next to the original J2ME-Loader
+        applicationId "ru.playsoftware.j2meloader_mob"
         minSdk MIN_SDK
         targetSdk TARGET_SDK
         versionCode 101
@@ -117,9 +118,7 @@ android {
     }
 
     applicationVariants.all {
-        if (buildType.name == 'debug' && flavorName != 'midlet') {
-            resValue 'string', 'app_name', 'JL-Debug'
-        }
+        // the app label comes from rootProject.name ('J2Me Loader-Mob') for every build type
         def baseName = flavorName == 'midlet' ? "${midletArchivesBaseName}-" : "${rootProject.name}-"
         outputs.all {
             outputFileName = "${baseName}${versionName}-${dirName}-${buildType.name}.apk"

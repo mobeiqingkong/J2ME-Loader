@@ -120,9 +120,27 @@ public abstract class Canvas extends Displayable {
 
 	private static final float FULLSCREEN_HEIGHT_RATIO = 0.85f;
 
+	/**
+	 * Supersampling factor is selected automatically from the screen resolution.
+	 */
+	public static final int SUPERSAMPLING_AUTO = 0;
+	/**
+	 * Maximum supersampling factor available to the user.
+	 */
+	public static final int MAX_SUPERSAMPLING = 10;
+	/**
+	 * Maximum size of a supersampled screen buffer, the value is safe for GLES2 devices.
+	 */
+	private static final int MAX_SUPERSAMPLING_DIMENSION = 4096;
+	/**
+	 * Maximum area of a supersampled screen buffer in pixels (32 MB for ARGB_8888).
+	 */
+	private static final long MAX_SUPERSAMPLING_PIXELS = 8L * 1024 * 1024;
+
 	private static boolean filter;
 	private static boolean touchInput;
 	private static int graphicsMode;
+	private static int supersampling;
 	private static ShaderInfo shaderFilter;
 	private static boolean parallelRedraw;
 	private static boolean forceFullscreen;
@@ -162,6 +180,10 @@ public abstract class Canvas extends Displayable {
 	private boolean skipLeftSoft;
 	private boolean skipRightSoft;
 	private int[][] lastPointerPos = new int[20][2];
+	/**
+	 * Actual supersampling factor of the screen buffers, 1 means no supersampling.
+	 */
+	private int supersamplingFactor = 1;
 
 	protected Canvas() {
 		this(forceFullscreen);
@@ -206,6 +228,17 @@ public abstract class Canvas extends Displayable {
 	public static void setGraphicsMode(int mode, boolean parallel) {
 		Canvas.graphicsMode = mode;
 		Canvas.parallelRedraw = (mode == 0 || mode == 3) && parallel;
+	}
+
+	/**
+	 * Sets the supersampling factor of the virtual screen.
+	 *
+	 * @param factor {@link #SUPERSAMPLING_AUTO} to select the factor from the screen
+	 *               resolution, or a value from 1 to {@link #MAX_SUPERSAMPLING}
+	 */
+	public static void setSupersampling(int factor) {
+		Canvas.supersampling = Math.max(SUPERSAMPLING_AUTO,
+				Math.min(factor, MAX_SUPERSAMPLING));
 	}
 
 	public static void setForceFullscreen(boolean forceFullscreen) {
@@ -319,8 +352,13 @@ public abstract class Canvas extends Displayable {
 			Bitmap bitmap;
 			if (screenshotRawMode) {
 				synchronized (bufferLock) {
-					bitmap = Bitmap.createBitmap(offscreenCopy.getBitmap(), 0, 0,
-							offscreenCopy.getWidth(), offscreenCopy.getHeight());
+					int scale = supersamplingFactor;
+					int w = offscreenCopy.getWidth();
+					int h = offscreenCopy.getHeight();
+					Bitmap raw = Bitmap.createBitmap(offscreenCopy.getBitmap(), 0, 0,
+							w * scale, h * scale);
+					// keep the screenshot size independent from the supersampling factor
+					bitmap = scale > 1 ? Bitmap.createScaledBitmap(raw, w, h, true) : raw;
 				}
 			} else {
 				bitmap = Bitmap.createBitmap(onWidth, onHeight, Bitmap.Config.ARGB_8888);
@@ -461,6 +499,11 @@ public abstract class Canvas extends Displayable {
 		 */
 		maxHeight = height;
 
+		/*
+		 * select the supersampling factor and (re)allocate the screen buffers
+		 */
+		int newSupersampling = calculateSupersampling(width, maxHeight);
+
 		softBar.resize();
 		/*
 		 * calculate the current height
@@ -476,13 +519,33 @@ public abstract class Canvas extends Displayable {
 		virtualScreen.set(onX, onY, onX + onWidth, onY + onHeight);
 
 		synchronized (bufferLock) {
-			if (offscreen == null) {
-				offscreen = Image.createImage(width, maxHeight, 0);
-				offscreenCopy = Image.createImage(width, maxHeight, 0);
-			}
-			if (offscreen.getWidth() != width || offscreen.getHeight() != height) {
+			if (offscreen == null || offscreen.getPixelScale() != newSupersampling) {
+				while (true) {
+					try {
+						offscreen = Image.createImage(width, maxHeight, 0, newSupersampling);
+						offscreenCopy = Image.createImage(width, maxHeight, 0, newSupersampling);
+						supersamplingFactor = newSupersampling;
+						break;
+					} catch (OutOfMemoryError e) {
+						offscreen = null;
+						offscreenCopy = null;
+						if (newSupersampling <= 1) {
+							throw e;
+						}
+						newSupersampling--;
+						Log.w(TAG, "Not enough memory for supersampling, retrying with x"
+								+ newSupersampling);
+					}
+				}
+			} else if (offscreen.getWidth() != width || offscreen.getHeight() != height) {
 				offscreen.setSize(width, height);
 				offscreenCopy.setSize(width, height);
+			}
+			if (supersamplingFactor > 1) {
+				// a supersampled buffer must be downscaled with filtering
+				canvasWrapper.setFilterBitmap(true);
+			} else {
+				canvasWrapper.setFilterBitmap(filter);
 			}
 		}
 		if (overlay != null) {
@@ -494,11 +557,44 @@ public abstract class Canvas extends Displayable {
 			float gt = 1.0f - 2.0f * virtualScreen.top / displayHeight;
 			float gr = 2.0f * virtualScreen.right / displayWidth - 1.0f;
 			float gb = 1.0f - 2.0f * virtualScreen.bottom / displayHeight;
-			float th = (float) height / offscreen.getBitmap().getHeight();
-			float tw = (float) width / offscreen.getBitmap().getWidth();
+			float th = (float) height * supersamplingFactor / offscreen.getBitmap().getHeight();
+			float tw = (float) width * supersamplingFactor / offscreen.getBitmap().getWidth();
 			renderer.updateSize(gl, gt, gr, gb, th, tw);
 		}
 		repaintInternal();
+	}
+
+	/**
+	 * Selects the supersampling factor of the screen buffers.
+	 * <p>
+	 * In {@link #SUPERSAMPLING_AUTO} mode the factor is chosen so that the virtual screen
+	 * is rendered at the resolution it occupies on the display of the device.
+	 * The result is limited by the maximum buffer size to avoid out of memory errors
+	 * and too large OpenGL textures.
+	 *
+	 * @param width  logical width of the virtual screen
+	 * @param height logical height of the virtual screen
+	 * @return the supersampling factor, at least 1
+	 */
+	private int calculateSupersampling(int width, int height) {
+		if (width <= 0 || height <= 0) {
+			return 1;
+		}
+		int factor;
+		if (supersampling == SUPERSAMPLING_AUTO) {
+			// match the physical resolution of the emulated screen
+			float ratio = Math.max((float) onWidth / width, (float) onHeight / height);
+			factor = Math.round(ratio);
+		} else {
+			factor = supersampling;
+		}
+		factor = Math.max(1, Math.min(factor, MAX_SUPERSAMPLING));
+		while (factor > 1 && (width * factor > MAX_SUPERSAMPLING_DIMENSION
+				|| height * factor > MAX_SUPERSAMPLING_DIMENSION
+				|| (long) width * height * factor * factor > MAX_SUPERSAMPLING_PIXELS)) {
+			factor--;
+		}
+		return factor;
 	}
 
 	/**
@@ -597,6 +693,13 @@ public abstract class Canvas extends Displayable {
 	@Override
 	public int getHeight() {
 		return height;
+	}
+
+	/**
+	 * @return the supersampling factor currently used by the screen buffers, at least 1
+	 */
+	protected int getSupersamplingFactor() {
+		return supersamplingFactor;
 	}
 
 	protected abstract void paint(Graphics g);
@@ -806,6 +909,7 @@ public abstract class Canvas extends Displayable {
 			synchronized (bufferLock) {
 				GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, offscreenCopy.getBitmap(), 0);
 			}
+			updateTextureFilter();
 			glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 			if (fpsCounter != null) {
 				fpsCounter.increment();
@@ -816,13 +920,22 @@ public abstract class Canvas extends Displayable {
 			glGenTextures(1, bgTextureId, 0);
 			glActiveTexture(GL_TEXTURE0);
 			glBindTexture(GL_TEXTURE_2D, bgTextureId[0]);
-			glTexParameteri(GLES20.GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter ? GL_LINEAR : GL_NEAREST);
-			glTexParameteri(GLES20.GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter ? GL_LINEAR : GL_NEAREST);
 			glTexParameteri(GLES20.GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 			glTexParameteri(GLES20.GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+			updateTextureFilter();
 
 			// юнит текстуры
 			glUniform1i(program.uTextureUnit, 0);
+		}
+
+		/**
+		 * A supersampled buffer must be downscaled with filtering, otherwise the
+		 * additional resolution is simply thrown away.
+		 */
+		private void updateTextureFilter() {
+			int glFilter = filter || supersamplingFactor > 1 ? GL_LINEAR : GL_NEAREST;
+			glTexParameteri(GLES20.GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, glFilter);
+			glTexParameteri(GLES20.GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, glFilter);
 		}
 
 		public void updateSize(float gl, float gt, float gr, float gb, float th, float tw) {

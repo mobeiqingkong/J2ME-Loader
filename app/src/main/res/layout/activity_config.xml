@@ -292,6 +292,32 @@
                 app:layout_constraintStart_toEndOf="@+id/barrier_screen_config"
                 app:layout_constraintTop_toBottomOf="@+id/immediate_processing_toggle" />
 
+            <TextView
+                android:id="@+id/supersampling_hint"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/height_config_row"
+                android:gravity="center_vertical"
+                android:text="@string/PREF_SUPERSAMPLING"
+                android:textAppearance="?android:attr/textAppearanceSmall"
+                android:textColor="?attr/textColorSecondary"
+                android:textSize="15sp"
+                app:layout_constraintEnd_toStartOf="@+id/barrier_screen_config"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@+id/graphical_mode_selector"
+                app:layout_constraintWidth_min="wrap" />
+
+            <Spinner
+                android:id="@+id/supersampling_selector"
+                style="@style/SwitchStyle"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/height_config_row"
+                android:entries="@array/pref_supersampling_entries"
+                android:textColor="?attr/textColorSecondary"
+                android:textSize="15sp"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toEndOf="@+id/barrier_screen_config"
+                app:layout_constraintTop_toBottomOf="@+id/graphical_mode_selector" />
+
             <LinearLayout
                 android:id="@+id/shader_root"
                 android:layout_width="match_parent"
@@ -300,7 +326,7 @@
                 android:visibility="gone"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@+id/graphical_mode_hint"
+                app:layout_constraintTop_toBottomOf="@+id/supersampling_hint"
                 tools:visibility="visible">
 
                 <TextView
@@ -405,7 +431,7 @@
                 android:layout_width="10dp"
                 android:layout_height="match_parent"
                 app:barrierDirection="end"
-                app:constraint_referenced_ids="scale_ratio_hint,select_screen_background_color,screen_orientation_hint,scale_type_hint,graphical_mode_hint,fps_limit_hint,screen_gravity_hint" />
+                app:constraint_referenced_ids="scale_ratio_hint,select_screen_background_color,screen_orientation_hint,scale_type_hint,graphical_mode_hint,supersampling_hint,fps_limit_hint,screen_gravity_hint" />
 
 
         </androidx.constraintlayout.widget.ConstraintLayout><!-- Screen -->

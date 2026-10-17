@@ -5,6 +5,7 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.PorterDuff;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.util.TypedValue;
@@ -19,6 +20,7 @@ public class CanvasWrapper {
 	private final Paint fillPaint = new Paint();
 	private final Paint textPaint = new Paint();
 	private final Paint imgPaint = new Paint();
+	private final Rect imgSrc = new Rect();
 	private final float textSize;
 
 	private float textAscent;
@@ -75,7 +77,18 @@ public class CanvasWrapper {
 	public void drawImage(Image image, RectF dst) {
 		Bitmap bitmap = image.getBitmap();
 		bitmap.prepareToDraw();
-		canvas.drawBitmap(bitmap, image.getBounds(), dst, imgPaint);
+		// only the used part of the bitmap is visible, it may be supersampled
+		int scale = image.getPixelScale();
+		imgSrc.set(0, 0, image.getWidth() * scale, image.getHeight() * scale);
+		canvas.drawBitmap(bitmap, imgSrc, dst, imgPaint);
+	}
+
+	/**
+	 * Enables bilinear filtering, which is required to downscale a supersampled
+	 * screen buffer with acceptable quality.
+	 */
+	public void setFilterBitmap(boolean filter) {
+		imgPaint.setFilterBitmap(filter);
 	}
 
 	public void fillRect(RectF rect) {

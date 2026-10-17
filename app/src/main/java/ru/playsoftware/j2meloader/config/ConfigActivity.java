@@ -54,6 +54,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
 
+import javax.microedition.lcdui.Canvas;
 import javax.microedition.shell.MicroActivity;
 import javax.microedition.util.ContextHolder;
 
@@ -567,6 +568,8 @@ public class ConfigActivity extends BaseActivity implements View.OnClickListener
 		binding.parallelScreenRedrawingToggle.setChecked(params.parallelRedrawScreen);
 		binding.forceFullscreenToggle.setChecked(params.forceFullscreen);
 		binding.graphicalModeSelector.setSelection(params.graphicsMode);
+		binding.supersamplingSelector.setSelection(
+				Math.max(0, Math.min(params.supersampling, Canvas.MAX_SUPERSAMPLING)));
 		binding.showFpsToggle.setChecked(params.showFps);
 		binding.shaderSelector.setSelection(0);
 		if (spShaderAdapter != null) {
@@ -634,6 +637,9 @@ public class ConfigActivity extends BaseActivity implements View.OnClickListener
 			params.immediateMode = binding.immediateProcessingToggle.isChecked();
 			int mode = binding.graphicalModeSelector.getSelectedItemPosition();
 			params.graphicsMode = mode;
+			params.supersampling = Math.max(0, Math.min(
+					binding.supersamplingSelector.getSelectedItemPosition(),
+					Canvas.MAX_SUPERSAMPLING));
 			if (mode == 1) {
 				if (binding.shaderSelector.getSelectedItemPosition() == 0)
 					params.shader = null;

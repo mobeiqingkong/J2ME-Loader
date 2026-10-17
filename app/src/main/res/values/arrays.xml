@@ -63,4 +63,17 @@
         <item>@string/pref_screen_gravity_right</item>
         <item>@string/pref_screen_gravity_bottom</item>
     </string-array>
+    <string-array name="pref_supersampling_entries" tools:ignore="InconsistentArrays">
+        <item>@string/pref_supersampling_auto</item>
+        <item>1x</item>
+        <item>2x</item>
+        <item>3x</item>
+        <item>4x</item>
+        <item>5x</item>
+        <item>6x</item>
+        <item>7x</item>
+        <item>8x</item>
+        <item>9x</item>
+        <item>10x</item>
+    </string-array>
 </resources>

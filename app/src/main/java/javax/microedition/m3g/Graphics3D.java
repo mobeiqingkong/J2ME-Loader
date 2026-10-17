@@ -147,10 +147,15 @@ public class Graphics3D {
 
 		if (target instanceof Graphics) {
 			final Graphics finalG = (Graphics) target;
-			final int clipX = finalG.getClipX() + finalG.getTranslateX();
-			final int clipY = finalG.getClipY() + finalG.getTranslateY();
-			final int clipW = finalG.getClipWidth();
-			final int clipH = finalG.getClipHeight();
+			/*
+			 * The graphics may draw to a supersampled buffer while the renderer works
+			 * with the bitmap pixels, so the viewport is converted to the bitmap space.
+			 */
+			final int scale = finalG.getPixelScale();
+			final int clipX = (finalG.getClipX() + finalG.getTranslateX()) * scale;
+			final int clipY = (finalG.getClipY() + finalG.getTranslateY()) * scale;
+			final int clipW = finalG.getClipWidth() * scale;
+			final int clipH = finalG.getClipHeight() * scale;
 			if (clipW > Defs.MAX_VIEWPORT_WIDTH ||
 					clipH > Defs.MAX_VIEWPORT_HEIGHT) {
 				throw new IllegalArgumentException();

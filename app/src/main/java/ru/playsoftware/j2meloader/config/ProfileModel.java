@@ -77,6 +77,16 @@ public class ProfileModel {
 	@SerializedName("GraphicsMode")
 	public int graphicsMode;
 
+	/**
+	 * Supersampling factor of the virtual screen buffer.
+	 * <p>
+	 * 0 means automatic selection based on the screen resolution of the device,
+	 * values from 1 to {@code Canvas.MAX_SUPERSAMPLING} set the factor explicitly,
+	 * 1 disables supersampling.
+	 */
+	@SerializedName("Supersampling")
+	public int supersampling;
+
 	@SerializedName("Shader")
 	public ShaderInfo shader;
 
@@ -178,6 +188,7 @@ public class ProfileModel {
 		screenScaleToFit = true;
 		screenKeepAspectRatio = true;
 		graphicsMode = 1;
+		supersampling = 0;
 
 		fontSizeSmall = 18;
 		fontSizeMedium = 22;

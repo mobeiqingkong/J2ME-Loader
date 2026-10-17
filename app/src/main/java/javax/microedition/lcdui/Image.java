@@ -34,18 +34,38 @@ public class Image {
 	private Bitmap bitmap;
 	private Graphics graphics;
 	private final Rect bounds;
+	/**
+	 * Ratio between the size of the backing bitmap and the logical size of the image.
+	 * Used by the supersampled screen buffer, where one logical pixel is backed
+	 * by {@code pixelScale * pixelScale} bitmap pixels.
+	 */
+	private final int pixelScale;
 	private boolean isBlackWhiteAlpha;
 
 	public Image(Bitmap bitmap) {
+		this(bitmap, 1);
+	}
+
+	Image(Bitmap bitmap, int pixelScale) {
 		if (bitmap == null) {
 			throw new NullPointerException();
 		}
 		this.bitmap = bitmap;
-		bounds = new Rect(0, 0, bitmap.getWidth(), bitmap.getHeight());
+		this.pixelScale = Math.max(1, pixelScale);
+		bounds = new Rect(0, 0, bitmap.getWidth() / this.pixelScale,
+				bitmap.getHeight() / this.pixelScale);
 	}
 
 	public Bitmap getBitmap() {
 		return bitmap;
+	}
+
+	/**
+	 * @return the ratio between the backing bitmap size and the logical image size,
+	 * always at least 1
+	 */
+	public int getPixelScale() {
+		return pixelScale;
 	}
 
 	public static Image createImage(int width, int height) {
@@ -53,9 +73,19 @@ public class Image {
 	}
 
 	public static Image createImage(int width, int height, int argb) {
-		Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+		return createImage(width, height, argb, 1);
+	}
+
+	/**
+	 * Creates an image which is drawn at supersampled resolution.
+	 *
+	 * @param pixelScale ratio between the backing bitmap size and the logical size
+	 */
+	public static Image createImage(int width, int height, int argb, int pixelScale) {
+		int scale = Math.max(1, pixelScale);
+		Bitmap bitmap = Bitmap.createBitmap(width * scale, height * scale, Bitmap.Config.ARGB_8888);
 		if (argb != 0) bitmap.eraseColor(argb);
-		return new Image(bitmap);
+		return new Image(bitmap, scale);
 	}
 
 	public static Image createImage(String resname) throws IOException {
@@ -95,7 +125,7 @@ public class Image {
 
 	public static Image createImage(Image source) {
 		if (source.isMutable())
-			return new Image(Bitmap.createBitmap(source.bitmap));
+			return new Image(Bitmap.createBitmap(source.bitmap), source.pixelScale);
 		return source;
 	}
 
@@ -132,12 +162,14 @@ public class Image {
 	}
 
 	void copyTo(Image dst) {
-		dst.getSingleGraphics().getCanvas().drawBitmap(bitmap, bounds, bounds, null);
+		Rect src = new Rect(0, 0, bounds.right * pixelScale, bounds.bottom * pixelScale);
+		dst.getSingleGraphics().getCanvas().drawBitmap(bitmap, src, bounds, null);
 	}
 
 	void copyTo(Image dst, int x, int y) {
+		Rect src = new Rect(0, 0, bounds.right * pixelScale, bounds.bottom * pixelScale);
 		Rect r = new Rect(x, y, x + bounds.right, y + bounds.bottom);
-		dst.getSingleGraphics().getCanvas().drawBitmap(bitmap, bounds, r, null);
+		dst.getSingleGraphics().getCanvas().drawBitmap(bitmap, src, r, null);
 	}
 
 	public Graphics getSingleGraphics() {
@@ -148,21 +180,16 @@ public class Image {
 	}
 
 	void setSize(int width, int height) {
-		if (width > bitmap.getWidth() || height > bitmap.getHeight()) {
-			Bitmap b = bitmap;
-			bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-			bounds.right = width;
-			bounds.bottom = height;
-			if (graphics != null) {
-				graphics.reset(0, 0, width, height);
-				graphics.getCanvas().drawBitmap(b, 0, 0, null);
-			}
-		} else {
-			bounds.right = width;
-			bounds.bottom = height;
-			if (graphics != null) {
-				graphics.reset(0, 0, width, height);
-			}
+		if (width * pixelScale > bitmap.getWidth() || height * pixelScale > bitmap.getHeight()) {
+			bitmap = Bitmap.createBitmap(width * pixelScale, height * pixelScale,
+					Bitmap.Config.ARGB_8888);
+			// the cached graphics is bound to the replaced bitmap
+			graphics = null;
+		}
+		bounds.right = width;
+		bounds.bottom = height;
+		if (graphics != null) {
+			graphics.reset(0, 0, width, height);
 		}
 	}
 

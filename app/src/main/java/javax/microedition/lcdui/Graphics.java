@@ -51,6 +51,7 @@ public class Graphics implements
 
 	private final Canvas canvas;
 	private final Image image;
+	private final int pixelScale;
 
 	private final Paint drawPaint = new Paint();
 	private final Paint fillPaint = new Paint();
@@ -71,7 +72,16 @@ public class Graphics implements
 
 	Graphics(Image image) {
 		this.image = image;
+		pixelScale = image.getPixelScale();
 		canvas = new Canvas(image.getBitmap());
+		if (pixelScale > 1) {
+			/*
+			 * The image is supersampled: a logical pixel occupies a pixelScale * pixelScale
+			 * block of the bitmap. The scale is applied before the first save() so it is
+			 * restored by restoreToCount() in reset() and survives restore()/save() pairs.
+			 */
+			canvas.scale(pixelScale, pixelScale);
+		}
 		canvas.save();
 		canvas.clipRect(image.getBounds());
 		canvas.getClipBounds(clip);
@@ -79,6 +89,14 @@ public class Graphics implements
 		fillPaint.setStyle(Paint.Style.FILL);
 		drawPaint.setAntiAlias(false);
 		fillPaint.setAntiAlias(false);
+	}
+
+	/**
+	 * @return the supersampling factor of the image this graphics draws to,
+	 * always at least 1
+	 */
+	public int getPixelScale() {
+		return pixelScale;
 	}
 
 	public void reset(float cl, float ct, float cr, float cb) {
@@ -367,7 +385,16 @@ public class Graphics implements
 			ly = y;
 		}
 
-		canvas.drawBitmap(image.getBitmap(), lx, ly, null);
+		Bitmap bitmap = image.getBitmap();
+		int imageScale = image.getPixelScale();
+		if (imageScale == 1) {
+			canvas.drawBitmap(bitmap, lx, ly, null);
+		} else {
+			// a supersampled image occupies the logical area, not the bitmap one
+			rect.set(0, 0, image.getWidth() * imageScale, image.getHeight() * imageScale);
+			rectF.set(lx, ly, lx + image.getWidth(), ly + image.getHeight());
+			canvas.drawBitmap(bitmap, rect, rectF, null);
+		}
 	}
 
 	public void drawSubstring(String str, int offset, int len, int x, int y, int anchor) {
@@ -403,7 +430,9 @@ public class Graphics implements
 		RectF dstR = rectF;
 		float dx;
 		float dy;
-		srcR.set(x_src, y_src, x_src + width, y_src + height);
+		int imageScale = image.getPixelScale();
+		srcR.set(x_src * imageScale, y_src * imageScale,
+				(x_src + width) * imageScale, (y_src + height) * imageScale);
 
 		Matrix matrix = new Matrix();
 		switch (transform) {
@@ -528,8 +557,6 @@ public class Graphics implements
 	public void copyArea(int x_src, int y_src, int width, int height,
 						 int x_dest, int y_dest, int anchor) {
 		if (width <= 0 || height <= 0) return;
-		final int[] pixels = new int[width * height];
-		image.getBitmap().getPixels(pixels, 0, width, x_src, y_src, width, height);
 		float dx;
 		if ((anchor & Graphics.RIGHT) != 0) {
 			dx = x_dest - width;
@@ -546,14 +573,34 @@ public class Graphics implements
 		} else {
 			dy = y_dest;
 		}
+		if (pixelScale > 1) {
+			// keep the supersampled pixels intact, the destination rectangle is logical
+			int w = width * pixelScale;
+			int h = height * pixelScale;
+			Bitmap area = Bitmap.createBitmap(image.getBitmap(), x_src * pixelScale,
+					y_src * pixelScale, w, h);
+			rectF.set(dx, dy, dx + width, dy + height);
+			canvas.drawBitmap(area, new Rect(0, 0, w, h), rectF, null);
+			return;
+		}
+		final int[] pixels = new int[width * height];
+		image.getBitmap().getPixels(pixels, 0, width, x_src, y_src, width, height);
 		canvas.drawBitmap(pixels, 0, width, dx, dy, width, height, false, null);
 	}
 
 	public void getPixels(int[] pixels, int offset, int stride,
 						  int x, int y, int width, int height) {
 		Bitmap b = image.getBitmap();
-		int w = Math.min(width, b.getWidth() - x);
-		int h = Math.min(height, b.getHeight() - y);
+		int w = Math.min(width, image.getWidth() - x);
+		int h = Math.min(height, image.getHeight() - y);
+		if (pixelScale > 1) {
+			// the caller expects logical pixels, so the supersampled area is scaled down
+			Bitmap area = Bitmap.createBitmap(b, x * pixelScale, y * pixelScale,
+					w * pixelScale, h * pixelScale);
+			Bitmap scaled = Bitmap.createScaledBitmap(area, w, h, true);
+			scaled.getPixels(pixels, offset, stride, 0, 0, w, h);
+			return;
+		}
 		b.getPixels(pixels, offset, stride, x, y, w, h);
 	}
 
@@ -562,8 +609,11 @@ public class Graphics implements
 	}
 
 	void flush(Image image, int x, int y, int width, int height) {
-		rect.set(x, y, x + width, y + height);
-		canvas.drawBitmap(image.getBitmap(), rect, rect, null);
+		int imageScale = image.getPixelScale();
+		rect.set(x * imageScale, y * imageScale,
+				(x + width) * imageScale, (y + height) * imageScale);
+		rectF.set(x, y, x + width, y + height);
+		canvas.drawBitmap(image.getBitmap(), rect, rectF, null);
 	}
 
 	@Override

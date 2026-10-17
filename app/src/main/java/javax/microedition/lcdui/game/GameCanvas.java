@@ -16,6 +16,8 @@
 
 package javax.microedition.lcdui.game;
 
+import android.graphics.Color;
+
 import javax.microedition.lcdui.Canvas;
 import javax.microedition.lcdui.Graphics;
 import javax.microedition.lcdui.Image;
@@ -39,7 +41,8 @@ public class GameCanvas extends Canvas {
 	public GameCanvas(boolean suppressCommands) {
 		super();
 		this.suppressCommands = suppressCommands;
-		image = Image.createImage(width, maxHeight);
+		// the buffer is rendered with the same supersampling factor as the screen
+		image = Image.createImage(width, maxHeight, Color.WHITE, getSupersamplingFactor());
 	}
 
 	@Override
