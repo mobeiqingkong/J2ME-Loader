@@ -78,6 +78,7 @@ import javax.microedition.util.ContextHolder;
 import io.reactivex.Single;
 import io.reactivex.schedulers.Schedulers;
 import ru.playsoftware.j2meloader.R;
+import ru.playsoftware.j2meloader.config.Config;
 import ru.playsoftware.j2meloader.config.ShaderInfo;
 
 @SuppressWarnings({"WeakerAccess", "unused"})

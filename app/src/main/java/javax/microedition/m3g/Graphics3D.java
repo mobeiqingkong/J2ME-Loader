@@ -257,7 +257,16 @@ public class Graphics3D {
 				|| height > Defs.MAX_VIEWPORT_DIMENSION) {
 			throw new IllegalArgumentException();
 		}
-		_setViewport(handle, x + offsetX, y + offsetY, width, height);
+		/*
+		 * The game works with logical screen coordinates, but when the target is
+		 * a supersampled graphics the renderer operates on the bitmap pixels.
+		 * bindTarget() applies the same conversion, however a game may call this
+		 * method afterwards with its own viewport, so the scaling can not be
+		 * done in bindTarget() only.
+		 */
+		int scale = currentTarget instanceof Graphics ? ((Graphics) currentTarget).getPixelScale() : 1;
+		_setViewport(handle, (x + offsetX) * scale, (y + offsetY) * scale,
+				width * scale, height * scale);
 	}
 
 	/**

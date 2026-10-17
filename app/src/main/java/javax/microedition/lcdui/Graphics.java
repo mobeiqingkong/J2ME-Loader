@@ -52,7 +52,10 @@ public class Graphics implements
 	private final Canvas canvas;
 	private final Image image;
 	private final int pixelScale;
-
+	/**
+	 * Scratch buffer for drawRGB/copyArea, reused between calls to avoid
+	 * allocating a bitmap for every tile of the scene.
+	 */
 	private final Paint drawPaint = new Paint();
 	private final Paint fillPaint = new Paint();
 
@@ -550,8 +553,11 @@ public class Graphics implements
 				pixels[d + j] = alphaCorrection | pixel;
 			}
 		}
-		// Use deprecated method due to performance issues
-		canvas.drawBitmap(pixels, 0, width, x, y, width, height, true, null);
+		// Canvas.drawBitmap(int[], ...) and the (src, dst) variants ignore the canvas
+		// transform on some Android 16 ROMs, so the tile is drawn exactly like
+		// drawImage does: a bitmap at its intrinsic size, positioned by (x, y)
+		Bitmap bitmap = Bitmap.createBitmap(pixels, 0, width, width, height, Bitmap.Config.ARGB_8888);
+		canvas.drawBitmap(bitmap, x, y, null);
 	}
 
 	public void copyArea(int x_src, int y_src, int width, int height,
@@ -585,7 +591,9 @@ public class Graphics implements
 		}
 		final int[] pixels = new int[width * height];
 		image.getBitmap().getPixels(pixels, 0, width, x_src, y_src, width, height);
-		canvas.drawBitmap(pixels, 0, width, dx, dy, width, height, false, null);
+		// see drawRGB: only the (bitmap, x, y) form respects the canvas transform
+		Bitmap bitmap = Bitmap.createBitmap(pixels, 0, width, width, height, Bitmap.Config.ARGB_8888);
+		canvas.drawBitmap(bitmap, dx, dy, null);
 	}
 
 	public void getPixels(int[] pixels, int offset, int stride,
