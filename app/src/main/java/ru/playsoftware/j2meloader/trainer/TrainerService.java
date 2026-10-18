@@ -29,20 +29,25 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ListView;
-import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.Nullable;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import ru.playsoftware.j2meloader.R;
 
 /**
  * Floating memory trainer, similar to the classic "八门神器" workflow:
  * search a value, refine the matches after it changes, then overwrite it.
+ * <p>
+ * The search button doubles as the refine button: once there are results, the same
+ * value field is used to enter the new value and filter the previous matches.
  */
 public class TrainerService extends Service implements View.OnClickListener,
 		AdapterView.OnItemClickListener {
@@ -62,26 +67,48 @@ public class TrainerService extends Service implements View.OnClickListener,
 	private EditText valueInput;
 	private EditText newValueInput;
 	private Button searchButton;
-	private Button refineButton;
 	private Button resetButton;
 	private Button writeButton;
 	private Button lockButton;
 	private Button unlockButton;
-	private Spinner typeSpinner;
+	private TextView typeLabel;
+	private LinearLayout typeList;
+	private int selectedType = MemoryTrainer.TYPE_DWORD;
 	private ListView listView;
 	private ArrayAdapter<String> adapter;
 
-	private final List<Long> results = new ArrayList<>();
-	private int type = MemoryTrainer.TYPE_DWORD;
+	private final List<MemoryTrainer.Hit> results = new ArrayList<>();
+	/**
+	 * Type selected when the current results were produced, -1 when there are none.
+	 */
+	private int searchType = -1;
+	/**
+	 * Patterns of the current search, keyed by type.
+	 */
+	private Map<Integer, byte[]> searchPatterns = Collections.emptyMap();
 	private Thread worker;
 	private volatile boolean cancelled;
 	private boolean focusable;
-	private boolean collapsed;
+	private boolean busy;
 
-	private final List<Long> locked = new ArrayList<>();
-	private byte[] lockedValue;
-	private int lockedType;
+	private final List<MemoryTrainer.Hit> locked = new ArrayList<>();
+	private Map<Integer, byte[]> lockedPatterns = Collections.emptyMap();
 	private final Handler handler = new Handler(Looper.getMainLooper());
+
+	/**
+	 * The result rows show the value currently stored at the address, exactly like the
+	 * address list of Cheat Engine, so they are re-read while the panel is open.
+	 */
+	private final Runnable refreshTask = new Runnable() {
+		@Override
+		public void run() {
+			if (panel != null && panel.getVisibility() == View.VISIBLE
+					&& !busy && !results.isEmpty()) {
+				refreshValues();
+			}
+			handler.postDelayed(this, 1000);
+		}
+	};
 
 	public static void start(Context context) {
 		Intent intent = new Intent(context, TrainerService.class);
@@ -108,6 +135,7 @@ public class TrainerService extends Service implements View.OnClickListener,
 		startForegroundCompat();
 		windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
 		showOverlay();
+		handler.postDelayed(refreshTask, 1000);
 	}
 
 	@Override
@@ -122,6 +150,7 @@ public class TrainerService extends Service implements View.OnClickListener,
 	@Override
 	public void onDestroy() {
 		cancelled = true;
+		handler.removeCallbacks(refreshTask);
 		handler.removeCallbacksAndMessages(null);
 		if (root != null) {
 			try {
@@ -174,8 +203,7 @@ public class TrainerService extends Service implements View.OnClickListener,
 				WindowManager.LayoutParams.WRAP_CONTENT,
 				windowType,
 				WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-						| WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
-						| WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+						| WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
 				PixelFormat.TRANSLUCENT);
 		params.gravity = Gravity.TOP | Gravity.START;
 		params.x = 0;
@@ -189,25 +217,37 @@ public class TrainerService extends Service implements View.OnClickListener,
 		valueInput = root.findViewById(R.id.trainer_value);
 		newValueInput = root.findViewById(R.id.trainer_new_value);
 		listView = root.findViewById(R.id.trainer_list);
-		typeSpinner = root.findViewById(R.id.trainer_type);
+		typeLabel = root.findViewById(R.id.trainer_type_label);
+		typeList = root.findViewById(R.id.trainer_type_list);
 		searchButton = root.findViewById(R.id.trainer_search);
-		refineButton = root.findViewById(R.id.trainer_refine);
 		resetButton = root.findViewById(R.id.trainer_reset);
 		writeButton = root.findViewById(R.id.trainer_write);
 		lockButton = root.findViewById(R.id.trainer_lock);
 		unlockButton = root.findViewById(R.id.trainer_unlock);
 
-		ArrayAdapter<String> typeAdapter = new ArrayAdapter<>(themed,
-				android.R.layout.simple_spinner_item, MemoryTrainer.TYPE_LABELS);
-		typeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-		typeSpinner.setAdapter(typeAdapter);
+		typeLabel.setOnClickListener(v -> {
+			boolean show = typeList.getVisibility() != View.VISIBLE;
+			typeList.setVisibility(show ? View.VISIBLE : View.GONE);
+			root.requestLayout();
+		});
+		buildTypeOptions(themed);
+		typeLabel.setText(MemoryTrainer.TYPE_LABELS[selectedType] + "  ▾");
 
-		adapter = new ArrayAdapter<>(themed, android.R.layout.simple_list_item_1);
+		adapter = new ArrayAdapter<String>(themed, android.R.layout.simple_list_item_1) {
+			@Override
+			public View getView(int position, View convertView, android.view.ViewGroup parent) {
+				TextView view = (TextView) super.getView(position, convertView, parent);
+				view.setTextSize(12.5f);
+				view.setSingleLine(true);
+				view.setEllipsize(TextUtils.TruncateAt.END);
+				view.setPadding(view.getPaddingLeft(), dp(4), view.getPaddingRight(), dp(4));
+				return view;
+			}
+		};
 		listView.setAdapter(adapter);
 		listView.setOnItemClickListener(this);
 
 		searchButton.setOnClickListener(this);
-		refineButton.setOnClickListener(this);
 		resetButton.setOnClickListener(this);
 		writeButton.setOnClickListener(this);
 		lockButton.setOnClickListener(this);
@@ -276,6 +316,39 @@ public class TrainerService extends Service implements View.OnClickListener,
 		}
 	}
 
+	/**
+	 * The type picker is a plain list inside the panel: a Spinner dropdown is a popup
+	 * window and can not be opened from a non focusable overlay.
+	 */
+	private void buildTypeOptions(Context themed) {
+		typeList.removeAllViews();
+		for (int i = 0; i < MemoryTrainer.TYPE_LABELS.length; i++) {
+			final int type = i;
+			TextView option = new TextView(themed);
+			option.setText(MemoryTrainer.TYPE_LABELS[i]);
+			option.setTextSize(13);
+			option.setTextColor(0xFFFFFFFF);
+			option.setPadding(dp(8), dp(8), dp(8), dp(8));
+			option.setBackgroundColor(0x00000000);
+			option.setOnClickListener(v -> selectType(type));
+			typeList.addView(option);
+		}
+	}
+
+	private int dp(int value) {
+		return Math.round(getResources().getDisplayMetrics().density * value);
+	}
+
+	private void selectType(int type) {
+		selectedType = type;
+		typeLabel.setText(MemoryTrainer.TYPE_LABELS[type] + "  ▾");
+		typeList.setVisibility(View.GONE);
+		root.requestLayout();
+		if (!results.isEmpty() && type != searchType) {
+			resetSearch(getString(R.string.trainer_type_changed));
+		}
+	}
+
 	private void setWindowFocusable(boolean focusable) {
 		if (this.focusable == focusable || root == null) return;
 		this.focusable = focusable;
@@ -299,27 +372,16 @@ public class TrainerService extends Service implements View.OnClickListener,
 		int id = v.getId();
 		if (id == R.id.trainer_search) {
 			setWindowFocusable(false);
-			startSearch(false);
-		} else if (id == R.id.trainer_refine) {
-			setWindowFocusable(false);
-			startSearch(true);
+			searchOrRefine();
 		} else if (id == R.id.trainer_reset) {
-			results.clear();
-			locked.clear();
-			lockedValue = null;
-			updateResultList();
-			setStatus(getString(R.string.trainer_no_result));
+			resetSearch(getString(R.string.trainer_no_result));
 		} else if (id == R.id.trainer_write) {
 			setWindowFocusable(false);
 			writeValues();
 		} else if (id == R.id.trainer_lock) {
 			startLock();
 		} else if (id == R.id.trainer_unlock) {
-			locked.clear();
-			lockedValue = null;
-			lockButton.setEnabled(writeButton.isEnabled());
-			unlockButton.setEnabled(false);
-			setStatus(getString(R.string.trainer_unlocked));
+			unlock();
 		} else if (id == R.id.trainer_close) {
 			stopSelf();
 		} else if (id == R.id.trainer_collapse) {
@@ -330,10 +392,15 @@ public class TrainerService extends Service implements View.OnClickListener,
 	}
 
 	private void setCollapsed(boolean collapse) {
-		collapsed = collapse;
 		panel.setVisibility(collapse ? View.GONE : View.VISIBLE);
 		ball.setVisibility(collapse ? View.VISIBLE : View.GONE);
 		setWindowFocusable(false);
+		// the window is wrap_content, the layout has to be measured again after the swap
+		root.requestLayout();
+		if (!collapse && !results.isEmpty()) {
+			// the game state may have changed while the panel was collapsed
+			refreshValues();
+		}
 		try {
 			windowManager.updateViewLayout(root, params);
 		} catch (Exception ignored) {
@@ -343,79 +410,119 @@ public class TrainerService extends Service implements View.OnClickListener,
 	@Override
 	public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
 		if (position < 0 || position >= results.size()) return;
-		String value = MemoryTrainer.readValue(results.get(position), type);
+		String value = MemoryTrainer.readHit(results.get(position));
 		if (value != null) {
 			newValueInput.setText(value);
 		}
 	}
 
-	private void startSearch(boolean refine) {
+	/**
+	 * The first tap searches the whole memory, every following tap with the same type
+	 * filters the previous matches using the value currently entered.
+	 */
+	private void searchOrRefine() {
 		if (worker != null && worker.isAlive()) {
 			Toast.makeText(this, R.string.trainer_busy, Toast.LENGTH_SHORT).show();
 			return;
 		}
-		type = typeSpinner.getSelectedItemPosition();
+		final int selected = selectedType;
 		final String text = valueInput.getText().toString();
-		byte[] pattern;
+		final Map<Integer, byte[]> patterns;
 		try {
-			pattern = MemoryTrainer.pattern(type, text);
+			patterns = buildPatterns(selected, text);
 		} catch (NumberFormatException e) {
 			setStatus(getString(R.string.trainer_bad_value));
 			return;
 		}
-		if (refine && results.isEmpty()) {
-			setStatus(getString(R.string.trainer_no_result));
+		if (patterns.isEmpty()) {
+			setStatus(getString(R.string.trainer_bad_value));
 			return;
 		}
+		final boolean refine = !results.isEmpty() && selected == searchType;
+		// the previous hits must be captured before the list is reset
+		final List<MemoryTrainer.Hit> previous = refine
+				? new ArrayList<>(results) : Collections.emptyList();
+		results.clear();
+		searchType = selected;
+		searchPatterns = patterns;
+		if (!refine) {
+			locked.clear();
+			lockedPatterns = Collections.emptyMap();
+			unlockButton.setEnabled(false);
+		}
 		setBusy(true);
-		setStatus(getString(R.string.trainer_searching));
+		setStatus(refine ? getString(R.string.trainer_refining) : getString(R.string.trainer_searching));
 		cancelled = false;
-		final boolean doRefine = refine;
 		worker = new Thread(() -> {
-			List<Long> found;
-			if (doRefine) {
-				found = MemoryTrainer.refine(type, pattern, new ArrayList<>(results));
+			List<MemoryTrainer.Hit> found;
+			if (refine) {
+				found = MemoryTrainer.refineAll(searchPatterns, previous);
+			} else if (selected == MemoryTrainer.TYPE_ALL) {
+				found = MemoryTrainer.searchAll(searchPatterns, progressListener());
 			} else {
-				found = MemoryTrainer.search(type, pattern, new MemoryTrainer.Listener() {
-					private long lastUpdate;
-
-					@Override
-					public void onProgress(long scanned, long total) {
-						long now = System.currentTimeMillis();
-						if (now - lastUpdate < 250) return;
-						lastUpdate = now;
-						String progress = getString(R.string.trainer_scanning)
-								+ " " + (scanned >> 20) + "/" + (total >> 20) + " MB";
-						handler.post(() -> setStatus(progress));
-					}
-
-					@Override
-					public boolean isCancelled() {
-						return cancelled || Thread.currentThread().isInterrupted();
-					}
-				});
+				List<Long> addresses = MemoryTrainer.search(selected,
+						searchPatterns.get(selected), progressListener());
+				found = new ArrayList<>(addresses.size());
+				for (Long address : addresses) {
+					found.add(new MemoryTrainer.Hit(address, selected));
+				}
 			}
 			handler.post(() -> {
 				results.clear();
 				results.addAll(found);
-				setBusy(false);
 				updateResultList();
 			});
 		}, "memory-search");
 		worker.start();
 	}
 
+	private Map<Integer, byte[]> buildPatterns(int type, String text) {
+		if (type == MemoryTrainer.TYPE_ALL) {
+			return MemoryTrainer.patternAll(text);
+		}
+		Map<Integer, byte[]> map = new LinkedHashMap<>();
+		map.put(type, MemoryTrainer.pattern(type, text));
+		return map;
+	}
+
+	private MemoryTrainer.Listener progressListener() {
+		return new MemoryTrainer.Listener() {
+			private long lastUpdate;
+
+			@Override
+			public void onProgress(long scanned, long total) {
+				long now = System.currentTimeMillis();
+				if (now - lastUpdate < 250) return;
+				lastUpdate = now;
+				String progress = getString(R.string.trainer_scanning)
+						+ " " + (scanned >> 20) + "/" + (total >> 20) + " MB";
+				handler.post(() -> setStatus(progress));
+			}
+
+			@Override
+			public boolean isCancelled() {
+				return cancelled || Thread.currentThread().isInterrupted();
+			}
+		};
+	}
+
+	private void resetSearch(String status) {
+		results.clear();
+		searchType = -1;
+		searchPatterns = Collections.emptyMap();
+		adapter.clear();
+		adapter.notifyDataSetChanged();
+		listView.clearChoices();
+		newValueInput.setText("");
+		unlock();
+		setBusy(false);
+		setStatus(status);
+	}
+
 	private void writeValues() {
 		if (results.isEmpty()) return;
-		type = typeSpinner.getSelectedItemPosition();
-		final byte[] pattern;
-		try {
-			pattern = MemoryTrainer.pattern(type, newValueInput.getText().toString());
-		} catch (NumberFormatException e) {
-			setStatus(getString(R.string.trainer_bad_value));
-			return;
-		}
-		final List<Long> targets = new ArrayList<>();
+		final String text = newValueInput.getText().toString();
+		final List<MemoryTrainer.Hit> targets = new ArrayList<>();
 		int selected = listView.getCheckedItemPosition();
 		if (selected >= 0 && selected < results.size()) {
 			targets.add(results.get(selected));
@@ -425,15 +532,14 @@ public class TrainerService extends Service implements View.OnClickListener,
 		setStatus(getString(R.string.trainer_writing));
 		new Thread(() -> {
 			int ok = 0;
-			for (Long address : targets) {
-				if (MemoryTrainer.writeValue(address, type, pattern)) {
+			for (MemoryTrainer.Hit hit : targets) {
+				if (MemoryTrainer.writeHit(hit, text)) {
 					ok++;
 				}
 			}
 			final int written = ok;
 			handler.post(() -> {
 				setStatus(getString(R.string.trainer_written, written, targets.size()));
-				newValueInput.setText("");
 				refreshValues();
 			});
 		}, "memory-write").start();
@@ -441,11 +547,15 @@ public class TrainerService extends Service implements View.OnClickListener,
 
 	private void startLock() {
 		if (results.isEmpty()) return;
-		type = typeSpinner.getSelectedItemPosition();
-		byte[] pattern;
+		Map<Integer, byte[]> patterns;
 		try {
-			pattern = MemoryTrainer.pattern(type, newValueInput.getText().toString());
+			patterns = buildPatterns(selectedType,
+					newValueInput.getText().toString());
 		} catch (NumberFormatException e) {
+			setStatus(getString(R.string.trainer_bad_value));
+			return;
+		}
+		if (patterns.isEmpty()) {
 			setStatus(getString(R.string.trainer_bad_value));
 			return;
 		}
@@ -456,43 +566,61 @@ public class TrainerService extends Service implements View.OnClickListener,
 		} else {
 			locked.addAll(results.size() > 2000 ? results.subList(0, 2000) : results);
 		}
-		lockedValue = pattern;
-		lockedType = type;
+		lockedPatterns = patterns;
 		unlockButton.setEnabled(true);
 		setStatus(getString(R.string.trainer_locking, locked.size()));
 		handler.removeCallbacks(lockTask);
 		handler.post(lockTask);
 	}
 
+	private void unlock() {
+		locked.clear();
+		lockedPatterns = Collections.emptyMap();
+		handler.removeCallbacks(lockTask);
+		unlockButton.setEnabled(false);
+	}
+
 	private final Runnable lockTask = new Runnable() {
 		@Override
 		public void run() {
-			if (lockedValue != null && !locked.isEmpty()) {
-				for (Long address : locked) {
-					MemoryTrainer.writeValue(address, lockedType, lockedValue);
+			if (locked.isEmpty() || lockedPatterns.isEmpty()) return;
+			for (MemoryTrainer.Hit hit : locked) {
+				byte[] pattern = lockedPatterns.get(hit.type);
+				if (pattern != null) {
+					MemoryTrainer.writeValue(hit.address, hit.type, pattern);
 				}
-				handler.postDelayed(this, 300);
 			}
+			handler.postDelayed(this, 300);
 		}
 	};
 
 	private void setBusy(boolean busy) {
+		this.busy = busy;
 		searchButton.setEnabled(!busy);
-		refineButton.setEnabled(!busy && !results.isEmpty());
 		resetButton.setEnabled(!busy && !results.isEmpty());
 		writeButton.setEnabled(!busy && !results.isEmpty());
 		lockButton.setEnabled(!busy && !results.isEmpty());
+		updateSearchButton();
+	}
+
+	private void updateSearchButton() {
+		searchButton.setText(results.isEmpty()
+				? R.string.trainer_search : R.string.trainer_continue);
 	}
 
 	private void updateResultList() {
 		adapter.clear();
 		int rows = Math.min(results.size(), MAX_ROWS);
+		List<String> values = MemoryTrainer.readHits(
+				results.size() > rows ? results.subList(0, rows) : results);
 		for (int i = 0; i < rows; i++) {
-			long address = results.get(i);
-			String value = MemoryTrainer.readValue(address, type);
-			adapter.add("0x" + Long.toHexString(address) + "   " + value);
+			String type = searchType == MemoryTrainer.TYPE_ALL
+					? " " + MemoryTrainer.typeTag(results.get(i).type) : "";
+			adapter.add("0x" + Long.toHexString(results.get(i).address) + type
+					+ "   " + values.get(i));
 		}
 		adapter.notifyDataSetChanged();
+		listView.clearChoices();
 		if (results.isEmpty()) {
 			setStatus(getString(R.string.trainer_no_result));
 		} else if (results.size() > MAX_ROWS) {
@@ -505,14 +633,33 @@ public class TrainerService extends Service implements View.OnClickListener,
 
 	private void refreshValues() {
 		if (results.isEmpty()) return;
-		adapter.clear();
 		int rows = Math.min(results.size(), MAX_ROWS);
+		List<String> values = MemoryTrainer.readHits(
+				results.size() > rows ? results.subList(0, rows) : results);
+		final List<String> lines = new ArrayList<>(rows);
 		for (int i = 0; i < rows; i++) {
-			long address = results.get(i);
-			String value = MemoryTrainer.readValue(address, type);
-			adapter.add("0x" + Long.toHexString(address) + "   " + value);
+			String type = searchType == MemoryTrainer.TYPE_ALL
+					? " " + MemoryTrainer.typeTag(results.get(i).type) : "";
+			lines.add("0x" + Long.toHexString(results.get(i).address) + type
+					+ "   " + values.get(i));
+		}
+		// skip the repaint when nothing changed, a refresh runs every second
+		boolean same = lines.size() == adapter.getCount();
+		for (int i = 0; same && i < rows; i++) {
+			same = lines.get(i).equals(adapter.getItem(i));
+		}
+		if (same) {
+			return;
+		}
+		int checked = listView.getCheckedItemPosition();
+		adapter.clear();
+		for (String line : lines) {
+			adapter.add(line);
 		}
 		adapter.notifyDataSetChanged();
+		if (checked >= 0) {
+			listView.setItemChecked(checked, true);
+		}
 	}
 
 	private void setStatus(String text) {

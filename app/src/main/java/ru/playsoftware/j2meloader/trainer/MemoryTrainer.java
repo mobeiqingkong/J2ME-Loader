@@ -41,19 +41,55 @@ public final class MemoryTrainer {
 	public static final int TYPE_WORD = 2;
 	public static final int TYPE_BYTE = 3;
 	public static final int TYPE_QWORD = 4;
+	/**
+	 * Pseudo type for the spinner: the value is searched as every supported type at once.
+	 */
+	public static final int TYPE_ALL = 5;
 
-	private static final String[] TYPE_NAMES = {"DWORD", "FLOAT", "WORD", "BYTE", "QWORD"};
+	private static final String[] TYPE_NAMES = {"DWORD", "FLOAT", "WORD", "BYTE", "QWORD", "ALL"};
 
 	public static final String[] TYPE_LABELS = {
 			"整数 4字节 (DWORD)", "小数 4字节 (FLOAT)", "整数 2字节 (WORD)",
-			"整数 1字节 (BYTE)", "整数 8字节 (QWORD)"
+			"整数 1字节 (BYTE)", "整数 8字节 (QWORD)", "全部类型（较慢）"
 	};
+
+	/**
+	 * One match: the address and the type the value was found as.
+	 */
+	public static final class Hit {
+		public final long address;
+		public final int type;
+
+		public Hit(long address, int type) {
+			this.address = address;
+			this.type = type;
+		}
+	}
 
 	private MemoryTrainer() {
 	}
 
 	public static String typeName(int type) {
 		return TYPE_NAMES[type];
+	}
+
+	/**
+	 * @return one letter tag used in the result list, the panel is too narrow
+	 * for the full name next to the address and the value
+	 */
+	public static String typeTag(int type) {
+		switch (type) {
+			case TYPE_FLOAT:
+				return "F";
+			case TYPE_WORD:
+				return "W";
+			case TYPE_BYTE:
+				return "B";
+			case TYPE_QWORD:
+				return "Q";
+			default:
+				return "D";
+		}
 	}
 
 	/**
@@ -343,6 +379,197 @@ public final class MemoryTrainer {
 				}
 			}
 		}
+	}
+
+	/**
+	 * @return the patterns for every type that can parse the given text, keyed by type
+	 */
+	public static java.util.Map<Integer, byte[]> patternAll(String text) {
+		java.util.Map<Integer, byte[]> map = new java.util.LinkedHashMap<>();
+		int[] order = {TYPE_QWORD, TYPE_DWORD, TYPE_FLOAT, TYPE_WORD, TYPE_BYTE};
+		for (int type : order) {
+			try {
+				map.put(type, pattern(type, text));
+			} catch (NumberFormatException ignored) {
+				// the text is not representable as this type, skip it
+			}
+		}
+		return map;
+	}
+
+	public static String readHit(Hit hit) {
+		return readValue(hit.address, hit.type);
+	}
+
+	/**
+	 * Reads the current value of every hit with a single file handle, the result list
+	 * is refreshed periodically while the panel is open.
+	 */
+	public static List<String> readHits(List<Hit> hits) {
+		List<String> values = new ArrayList<>(hits.size());
+		try (RandomAccessFile mem = new RandomAccessFile("/proc/self/mem", "r")) {
+			final byte[] probe = new byte[8];
+			for (Hit hit : hits) {
+				int size = valueSize(hit.type);
+				try {
+					mem.seek(hit.address);
+					if (mem.read(probe, 0, size) != size) {
+						values.add("?");
+						continue;
+					}
+				} catch (IOException e) {
+					values.add("?");
+					continue;
+				}
+				values.add(format(probe, hit.type));
+			}
+		} catch (IOException e) {
+			Log.e(TAG, "readHits failed", e);
+		}
+		return values;
+	}
+
+	private static String format(byte[] data, int type) {
+		switch (type) {
+			case TYPE_FLOAT:
+				return String.valueOf(Float.intBitsToFloat(readLe32(data, 0)));
+			case TYPE_WORD:
+				return String.valueOf((short) ((data[0] & 0xFF) | (data[1] << 8)));
+			case TYPE_BYTE:
+				return String.valueOf(data[0]);
+			case TYPE_QWORD:
+				return String.valueOf(readLe64(data, 0));
+			default:
+				return String.valueOf(readLe32(data, 0));
+		}
+	}
+
+	public static boolean writeHit(Hit hit, String text) {
+		try {
+			return writeValue(hit.address, hit.type, pattern(hit.type, text));
+		} catch (NumberFormatException e) {
+			return false;
+		}
+	}
+
+	/**
+	 * Searches the value as every type at once in a single pass. Every address is
+	 * reported once, with the largest type that matches, so a single byte hit does
+	 * not hide the integer stored at the same address.
+	 */
+	public static List<Hit> searchAll(java.util.Map<Integer, byte[]> patterns, Listener listener) {
+		final List<Hit> results = new ArrayList<>();
+		final List<long[]> regions = collectRegions();
+		long total = 0;
+		for (long[] r : regions) {
+			total += r[1] - r[0];
+		}
+		if (total > MAX_SCAN_BYTES) {
+			total = MAX_SCAN_BYTES;
+		}
+		final byte[] pQword = patterns.get(TYPE_QWORD);
+		final byte[] pDword = patterns.get(TYPE_DWORD);
+		final byte[] pFloat = patterns.get(TYPE_FLOAT);
+		final byte[] pWord = patterns.get(TYPE_WORD);
+		final byte[] pByte = patterns.get(TYPE_BYTE);
+		final byte[] buffer = new byte[CHUNK_SIZE];
+		long scanned = 0;
+
+		try (RandomAccessFile mem = new RandomAccessFile("/proc/self/mem", "r")) {
+			for (long[] region : regions) {
+				long pos = region[0];
+				final long end = region[1];
+				while (pos < end) {
+					if (listener != null && listener.isCancelled()) {
+						return results;
+					}
+					int want = (int) Math.min(CHUNK_SIZE, end - pos);
+					want -= want % 8;
+					if (want < 8) {
+						break;
+					}
+					int read = readFully(mem, pos, buffer, want);
+					if (read < 8) {
+						pos += 4096;
+						continue;
+					}
+					read -= read % 8;
+					scanMixed(buffer, read, pos, pQword, pDword, pFloat, pWord, pByte, results);
+					pos += read;
+					scanned += read;
+					if (listener != null) {
+						listener.onProgress(scanned, total);
+					}
+					if (results.size() >= MAX_RESULTS || scanned >= MAX_SCAN_BYTES) {
+						return results;
+					}
+				}
+			}
+		} catch (IOException e) {
+			Log.e(TAG, "searchAll failed", e);
+		}
+		return results;
+	}
+
+	private static void scanMixed(byte[] b, int len, long base, byte[] pQword, byte[] pDword,
+								  byte[] pFloat, byte[] pWord, byte[] pByte, List<Hit> out) {
+		final int limit = len - 8;
+		for (int i = 0; i <= limit; i++) {
+			// one hit per address, the largest type wins
+			if ((i & 7) == 0 && pQword != null && match(b, i, pQword)) {
+				out.add(new Hit(base + i, TYPE_QWORD));
+			} else if ((i & 3) == 0 && pDword != null && match(b, i, pDword)) {
+				out.add(new Hit(base + i, TYPE_DWORD));
+			} else if ((i & 3) == 0 && pFloat != null && match(b, i, pFloat)) {
+				out.add(new Hit(base + i, TYPE_FLOAT));
+			} else if ((i & 1) == 0 && pWord != null && match(b, i, pWord)) {
+				out.add(new Hit(base + i, TYPE_WORD));
+			} else if (pByte != null && b[i] == pByte[0]) {
+				out.add(new Hit(base + i, TYPE_BYTE));
+			}
+			if (out.size() >= MAX_RESULTS) {
+				return;
+			}
+		}
+	}
+
+	private static boolean match(byte[] b, int offset, byte[] pattern) {
+		for (int i = 0; i < pattern.length; i++) {
+			if (b[offset + i] != pattern[i]) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Keeps the hits which still hold the given value, checking every hit with its own type.
+	 */
+	public static List<Hit> refineAll(java.util.Map<Integer, byte[]> patterns, List<Hit> hits) {
+		final List<Hit> kept = new ArrayList<>();
+		try (RandomAccessFile mem = new RandomAccessFile("/proc/self/mem", "r")) {
+			final byte[] probe = new byte[8];
+			for (Hit hit : hits) {
+				byte[] pattern = patterns.get(hit.type);
+				if (pattern == null) {
+					continue;
+				}
+				try {
+					mem.seek(hit.address);
+					if (mem.read(probe, 0, pattern.length) != pattern.length) {
+						continue;
+					}
+				} catch (IOException e) {
+					continue;
+				}
+				if (match(probe, 0, pattern)) {
+					kept.add(hit);
+				}
+			}
+		} catch (IOException e) {
+			Log.e(TAG, "refineAll failed", e);
+		}
+		return kept;
 	}
 
 	private static void add(List<Long> out, long address) {

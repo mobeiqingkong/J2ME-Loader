@@ -267,7 +267,6 @@
     <string name="trainer_value_hint">Value to search</string>
     <string name="trainer_new_value_hint">New value</string>
     <string name="trainer_search">Search</string>
-    <string name="trainer_refine">Refine</string>
     <string name="trainer_reset">Reset</string>
     <string name="trainer_write">Write</string>
     <string name="trainer_lock">Lock</string>
@@ -285,4 +284,10 @@
     <string name="trainer_unlocked">Lock disabled</string>
     <string name="trainer_no_permission">Overlay permission is required</string>
     <string name="trainer_permission_hint">The trainer needs the "Display over other apps" permission to show its floating window.</string>
+
+    <string name="trainer_continue">Continue search</string>
+    <string name="trainer_refining">Filtering…</string>
+    <string name="trainer_type_changed">Type changed, search reset</string>
+
+    <string name="trainer_type_dword">整数 4字节 (DWORD)  ▾</string>
 </resources>

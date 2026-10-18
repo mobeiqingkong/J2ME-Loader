@@ -22,7 +22,11 @@
         android:layout_height="wrap_content"
         android:background="@drawable/trainer_bg"
         android:orientation="vertical"
-        android:padding="8dp">
+        android:clipToPadding="false"
+        android:paddingLeft="8dp"
+        android:paddingTop="8dp"
+        android:paddingRight="8dp"
+        android:paddingBottom="12dp">
 
         <LinearLayout
             android:id="@+id/trainer_header"
@@ -59,11 +63,24 @@
                 android:textSize="14sp" />
         </LinearLayout>
 
-        <Spinner
-            android:id="@+id/trainer_type"
+        <TextView
+            android:id="@+id/trainer_type_label"
             android:layout_width="match_parent"
             android:layout_height="36dp"
-            android:layout_marginTop="2dp" />
+            android:gravity="center_vertical"
+            android:paddingLeft="4dp"
+            android:paddingRight="4dp"
+            android:text="@string/trainer_type_dword"
+            android:textColor="#FFFFFFFF"
+            android:textSize="13sp" />
+
+        <LinearLayout
+            android:id="@+id/trainer_type_list"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="#FF101010"
+            android:orientation="vertical"
+            android:visibility="gone" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -99,42 +116,35 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:gravity="center_vertical"
             android:orientation="horizontal">
 
-            <Button
-                android:id="@+id/trainer_refine"
+            <TextView
+                android:id="@+id/trainer_status"
                 android:layout_width="0dp"
-                android:layout_height="36dp"
+                android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:enabled="false"
-                android:minWidth="0dp"
-                android:text="@string/trainer_refine"
+                android:paddingTop="2dp"
+                android:text="@string/trainer_no_result"
+                android:textColor="#FFB0BEC5"
                 android:textSize="12sp" />
 
             <Button
                 android:id="@+id/trainer_reset"
-                android:layout_width="0dp"
-                android:layout_height="36dp"
-                android:layout_weight="1"
+                android:layout_width="wrap_content"
+                android:layout_height="38dp"
                 android:enabled="false"
                 android:minWidth="0dp"
+                android:paddingLeft="12dp"
+                android:paddingRight="12dp"
                 android:text="@string/trainer_reset"
-                android:textSize="12sp" />
+                android:textSize="11sp" />
         </LinearLayout>
-
-        <TextView
-            android:id="@+id/trainer_status"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingTop="2dp"
-            android:text="@string/trainer_no_result"
-            android:textColor="#FFB0BEC5"
-            android:textSize="12sp" />
 
         <ListView
             android:id="@+id/trainer_list"
             android:layout_width="match_parent"
-            android:layout_height="150dp"
+            android:layout_height="140dp"
             android:layout_marginTop="2dp"
             android:background="#33000000"
             android:choiceMode="singleChoice"
@@ -180,7 +190,7 @@
             <Button
                 android:id="@+id/trainer_lock"
                 android:layout_width="0dp"
-                android:layout_height="34dp"
+                android:layout_height="42dp"
                 android:layout_weight="1"
                 android:enabled="false"
                 android:minWidth="0dp"
@@ -190,7 +200,8 @@
             <Button
                 android:id="@+id/trainer_unlock"
                 android:layout_width="0dp"
-                android:layout_height="34dp"
+                android:layout_height="42dp"
+                android:layout_marginRight="2dp"
                 android:layout_weight="1"
                 android:enabled="false"
                 android:minWidth="0dp"

@@ -213,7 +213,6 @@
     <string name="trainer_value_hint">要搜索的数值</string>
     <string name="trainer_new_value_hint">修改为</string>
     <string name="trainer_search">搜索</string>
-    <string name="trainer_refine">细化</string>
     <string name="trainer_reset">重置</string>
     <string name="trainer_write">写入</string>
     <string name="trainer_lock">锁定</string>
@@ -231,4 +230,10 @@
     <string name="trainer_unlocked">已解除锁定</string>
     <string name="trainer_no_permission">需要悬浮窗权限</string>
     <string name="trainer_permission_hint">修改器需要「显示在其他应用上层」权限才能显示悬浮窗。</string>
+
+    <string name="trainer_continue">继续搜索</string>
+    <string name="trainer_refining">筛选中…</string>
+    <string name="trainer_type_changed">类型已切换，搜索已重置</string>
+
+    <string name="trainer_type_dword">整数 4字节 (DWORD)  ▾</string>
 </resources>
