@@ -31,6 +31,7 @@ import android.content.res.TypedArray;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.os.IBinder;
 import android.text.Editable;
 import android.text.InputType;
@@ -82,6 +83,7 @@ import io.reactivex.SingleObserver;
 import io.reactivex.disposables.Disposable;
 import ru.playsoftware.j2meloader.BuildConfig;
 import ru.playsoftware.j2meloader.R;
+import ru.playsoftware.j2meloader.trainer.TrainerService;
 import ru.playsoftware.j2meloader.config.Config;
 import ru.playsoftware.j2meloader.databinding.ActivityMicroBinding;
 import ru.playsoftware.j2meloader.util.Constants;
@@ -427,6 +429,7 @@ public class MicroActivity extends AppCompatActivity {
 		if (actionBarEnabled) {
 			menu.findItem(R.id.action_ime_keyboard).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
 			menu.findItem(R.id.action_take_screenshot).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
+			menu.findItem(R.id.action_trainer).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
 		}
 		if (inputMethodManager == null) {
 			menu.findItem(R.id.action_ime_keyboard).setVisible(false);
@@ -474,6 +477,8 @@ public class MicroActivity extends AppCompatActivity {
 					InputMethodManager.SHOW_FORCED, 0);
 		} else if (id == R.id.action_take_screenshot) {
 			takeScreenshot();
+		} else if (id == R.id.action_trainer) {
+			toggleTrainer();
 		} else if (id == R.id.action_limit_fps) {
 			showLimitFpsDialog();
 		} else if (ContextHolder.getVk() != null) {
@@ -500,6 +505,33 @@ public class MicroActivity extends AppCompatActivity {
 		} else if (id == R.id.action_hide_buttons) {
 			showHideButtonDialog();
 		}
+	}
+
+	/**
+	 * Shows the floating memory trainer, or explains why the overlay is not allowed yet.
+	 */
+	private void toggleTrainer() {
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+				&& !Settings.canDrawOverlays(this)) {
+			new AlertDialog.Builder(this)
+					.setTitle(R.string.action_trainer)
+					.setMessage(R.string.trainer_permission_hint)
+					.setPositiveButton(android.R.string.ok, (dialog, which) -> {
+						Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+								Uri.parse("package:" + getPackageName()));
+						try {
+							startActivity(intent);
+						} catch (Exception e) {
+							Toast.makeText(this, R.string.trainer_no_permission,
+									Toast.LENGTH_LONG).show();
+						}
+					})
+					.setNegativeButton(android.R.string.cancel, null)
+					.show();
+			return;
+		}
+		TrainerService.start(this);
+		Toast.makeText(this, R.string.trainer_running, Toast.LENGTH_SHORT).show();
 	}
 
 	@SuppressLint("CheckResult")

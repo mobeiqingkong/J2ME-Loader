@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content">
+
+    <!-- collapsed state: a small draggable ball -->
+    <TextView
+        android:id="@+id/trainer_ball"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:background="@drawable/trainer_bg"
+        android:gravity="center"
+        android:text="M"
+        android:textColor="#FFE91E63"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/trainer_panel"
+        android:layout_width="290dp"
+        android:layout_height="wrap_content"
+        android:background="@drawable/trainer_bg"
+        android:orientation="vertical"
+        android:padding="8dp">
+
+        <LinearLayout
+            android:id="@+id/trainer_header"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/trainer_title"
+                android:textColor="#FFFFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/trainer_collapse"
+                android:layout_width="32dp"
+                android:layout_height="24dp"
+                android:gravity="center"
+                android:text="—"
+                android:textColor="#FFCCCCCC"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/trainer_close"
+                android:layout_width="32dp"
+                android:layout_height="24dp"
+                android:gravity="center"
+                android:text="✕"
+                android:textColor="#FFCCCCCC"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <Spinner
+            android:id="@+id/trainer_type"
+            android:layout_width="match_parent"
+            android:layout_height="36dp"
+            android:layout_marginTop="2dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:orientation="horizontal">
+
+            <EditText
+                android:id="@+id/trainer_value"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_weight="1"
+                android:hint="@string/trainer_value_hint"
+                android:importantForAutofill="no"
+                android:inputType="text"
+                android:padding="6dp"
+                android:singleLine="true"
+                android:textColor="#FFFFFFFF"
+                android:textColorHint="#FF888888"
+                android:textSize="13sp" />
+
+            <Button
+                android:id="@+id/trainer_search"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:minWidth="0dp"
+                android:paddingLeft="10dp"
+                android:paddingRight="10dp"
+                android:text="@string/trainer_search"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/trainer_refine"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:enabled="false"
+                android:minWidth="0dp"
+                android:text="@string/trainer_refine"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/trainer_reset"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:enabled="false"
+                android:minWidth="0dp"
+                android:text="@string/trainer_reset"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/trainer_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="2dp"
+            android:text="@string/trainer_no_result"
+            android:textColor="#FFB0BEC5"
+            android:textSize="12sp" />
+
+        <ListView
+            android:id="@+id/trainer_list"
+            android:layout_width="match_parent"
+            android:layout_height="150dp"
+            android:layout_marginTop="2dp"
+            android:background="#33000000"
+            android:choiceMode="singleChoice"
+            android:divider="#33FFFFFF"
+            android:dividerHeight="1dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <EditText
+                android:id="@+id/trainer_new_value"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_weight="1"
+                android:hint="@string/trainer_new_value_hint"
+                android:importantForAutofill="no"
+                android:inputType="text"
+                android:padding="6dp"
+                android:singleLine="true"
+                android:textColor="#FFFFFFFF"
+                android:textColorHint="#FF888888"
+                android:textSize="13sp" />
+
+            <Button
+                android:id="@+id/trainer_write"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:enabled="false"
+                android:minWidth="0dp"
+                android:paddingLeft="10dp"
+                android:paddingRight="10dp"
+                android:text="@string/trainer_write"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/trainer_lock"
+                android:layout_width="0dp"
+                android:layout_height="34dp"
+                android:layout_weight="1"
+                android:enabled="false"
+                android:minWidth="0dp"
+                android:text="@string/trainer_lock"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/trainer_unlock"
+                android:layout_width="0dp"
+                android:layout_height="34dp"
+                android:layout_weight="1"
+                android:enabled="false"
+                android:minWidth="0dp"
+                android:text="@string/trainer_unlock"
+                android:textSize="12sp" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>
