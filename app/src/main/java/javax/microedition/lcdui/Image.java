@@ -73,7 +73,25 @@ public class Image {
 	}
 
 	public static Image createImage(int width, int height, int argb) {
-		return createImage(width, height, argb, 1);
+		return createImage(width, height, argb, supersamplingFor(width, height));
+	}
+
+	/**
+	 * A game that renders the whole frame into its own image would be rasterized at
+	 * 1x and the supersampled screen buffer could only upscale it, so full screen
+	 * sized off-screen buffers follow the screen supersampling factor.
+	 */
+	private static int supersamplingFor(int width, int height) {
+		int factor = Canvas.getScreenSupersampling();
+		if (factor <= 1) {
+			return 1;
+		}
+		long area = (long) width * height;
+		if (area * 2 < Canvas.getVirtualScreenArea()) {
+			// sprites and small buffers do not benefit and would only waste memory
+			return 1;
+		}
+		return factor;
 	}
 
 	/**
@@ -83,7 +101,17 @@ public class Image {
 	 */
 	public static Image createImage(int width, int height, int argb, int pixelScale) {
 		int scale = Math.max(1, pixelScale);
-		Bitmap bitmap = Bitmap.createBitmap(width * scale, height * scale, Bitmap.Config.ARGB_8888);
+		Bitmap bitmap;
+		try {
+			bitmap = Bitmap.createBitmap(width * scale, height * scale, Bitmap.Config.ARGB_8888);
+		} catch (OutOfMemoryError e) {
+			if (scale == 1) {
+				throw e;
+			}
+			// a big off-screen buffer may not fit at the supersampled size
+			scale = 1;
+			bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+		}
 		if (argb != 0) bitmap.eraseColor(argb);
 		return new Image(bitmap, scale);
 	}
@@ -158,7 +186,23 @@ public class Image {
 	}
 
 	public void getRGB(int[] rgbData, int offset, int scanlength, int x, int y, int width, int height) {
-		bitmap.getPixels(rgbData, offset, scanlength, x, y, width, height);
+		if (pixelScale == 1) {
+			bitmap.getPixels(rgbData, offset, scanlength, x, y, width, height);
+			return;
+		}
+		// the caller works with logical pixels, the bitmap holds pixelScale * pixelScale
+		// of them per logical pixel
+		final int w = width * pixelScale;
+		final int h = height * pixelScale;
+		final int[] tmp = new int[w * h];
+		bitmap.getPixels(tmp, 0, w, x * pixelScale, y * pixelScale, w, h);
+		for (int j = 0; j < height; j++) {
+			final int srcRow = j * pixelScale * w;
+			final int dstRow = offset + j * scanlength;
+			for (int i = 0; i < width; i++) {
+				rgbData[dstRow + i] = tmp[srcRow + i * pixelScale];
+			}
+		}
 	}
 
 	void copyTo(Image dst) {

@@ -185,6 +185,14 @@ public abstract class Canvas extends Displayable {
 	 * Actual supersampling factor of the screen buffers, 1 means no supersampling.
 	 */
 	private int supersamplingFactor = 1;
+	/**
+	 * Factor and size of the last virtual screen, game created off-screen buffers of the
+	 * same size are supersampled as well, otherwise a game that renders the whole frame
+	 * into its own image would still be rasterized at 1x.
+	 */
+	private static int screenSupersampling = 1;
+	private static int screenVirtualWidth = 240;
+	private static int screenVirtualHeight = 320;
 
 	protected Canvas() {
 		this(forceFullscreen);
@@ -237,6 +245,20 @@ public abstract class Canvas extends Displayable {
 	 * @param factor {@link #SUPERSAMPLING_AUTO} to select the factor from the screen
 	 *               resolution, or a value from 1 to {@link #MAX_SUPERSAMPLING}
 	 */
+	/**
+	 * @return supersampling factor currently used by the virtual screen
+	 */
+	static int getScreenSupersampling() {
+		return screenSupersampling;
+	}
+
+	/**
+	 * @return area of the virtual screen in logical pixels
+	 */
+	static long getVirtualScreenArea() {
+		return (long) screenVirtualWidth * screenVirtualHeight;
+	}
+
 	public static void setSupersampling(int factor) {
 		Canvas.supersampling = Math.max(SUPERSAMPLING_AUTO,
 				Math.min(factor, MAX_SUPERSAMPLING));
@@ -542,6 +564,13 @@ public abstract class Canvas extends Displayable {
 				offscreen.setSize(width, height);
 				offscreenCopy.setSize(width, height);
 			}
+			screenSupersampling = supersamplingFactor;
+			screenVirtualWidth = width;
+			screenVirtualHeight = maxHeight;
+			Log.i(TAG, "screen " + width + "x" + maxHeight
+					+ ", supersampling x" + supersamplingFactor
+					+ " (buffer " + (width * supersamplingFactor) + "x"
+					+ (maxHeight * supersamplingFactor) + ")");
 			if (supersamplingFactor > 1) {
 				// a supersampled buffer must be downscaled with filtering
 				canvasWrapper.setFilterBitmap(true);

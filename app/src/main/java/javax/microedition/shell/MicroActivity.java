@@ -248,7 +248,15 @@ public class MicroActivity extends AppCompatActivity {
 				break;
 			case ORIENTATION_DEFAULT:
 			default:
-				setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+				/*
+				 * A J2ME screen has a fixed size, so follow its shape instead of the
+				 * device orientation: a 240x320 game must not end up rotated just
+				 * because the phone is held in landscape. Users who want the screen
+				 * to follow the device can select "auto" explicitly.
+				 */
+				setRequestedOrientation(microLoader.getScreenWidth() > microLoader.getScreenHeight()
+						? ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+						: ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT);
 				break;
 		}
 	}

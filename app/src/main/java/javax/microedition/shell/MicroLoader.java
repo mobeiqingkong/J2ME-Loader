@@ -229,6 +229,14 @@ public class MicroLoader {
 		return params.orientation;
 	}
 
+	public int getScreenWidth() {
+		return params.screenWidth;
+	}
+
+	public int getScreenHeight() {
+		return params.screenHeight;
+	}
+
 	void setLimitFps(int fps) {
 		if (fps == -1) Canvas.setLimitFps(params.fpsLimit);
 		else Canvas.setLimitFps(fps);
